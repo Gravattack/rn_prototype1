@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "RN Playground Native",
+    "slug": "rn-playground-native",
+    "version": "1.0.0",
+    "scheme": "rnplayground",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "softwareKeyboardLayoutMode": "pan"
+    }
+  }
+}

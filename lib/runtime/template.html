@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Preview</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #ffffff; overflow: auto; }
+    #root { width: 100%; height: 100%; background: #ffffff; }
+    #error {
+      display: none;
+      padding: 20px;
+      background: #fee;
+      color: #c00;
+      font-family: monospace;
+      white-space: pre-wrap;
+      overflow: auto;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <div id="error"></div>
+
+  <!-- Load dependencies from CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-native-web@0.19.10/dist/index.js"></script>
+
+  <script>
+    // Intercept console methods and send to parent
+    const originalConsole = {
+      log: console.log,
+      error: console.error,
+      warn: console.warn,
+      info: console.info,
+    };
+
+    ['log', 'error', 'warn', 'info'].forEach(level => {
+      console[level] = (...args) => {
+        originalConsole[level](...args);
+        window.parent.postMessage({
+          type: 'console',
+          level,
+          message: args.map(arg => 
+            typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+          ).join(' '),
+          timestamp: new Date().toISOString(),
+        }, '*');
+      };
+    });
+
+    // Global error handler
+    window.addEventListener('error', (event) => {
+      const errorDiv = document.getElementById('error');
+      const rootDiv = document.getElementById('root');
+      if (errorDiv && rootDiv) {
+        errorDiv.style.display = 'block';
+        rootDiv.style.display = 'none';
+        errorDiv.textContent = `Error: ${event.message}\n\nFile: ${event.filename}\nLine: ${event.lineno}:${event.colno}`;
+      }
+      window.parent.postMessage({
+        type: 'console',
+        level: 'error',
+        message: `${event.message} (${event.filename}:${event.lineno})`,
+        timestamp: new Date().toISOString(),
+      }, '*');
+    });
+
+    // Unhandled promise rejections
+    window.addEventListener('unhandledrejection', (event) => {
+      console.error('Unhandled Promise Rejection:', event.reason);
+    });
+
+    // Expose React and ReactDOM globally for user code
+    window.React = window.React || React;
+    window.ReactDOM = window.ReactDOM || ReactDOM;
+    window.ReactNative = window.ReactNativeWeb;
+
+    // Signal ready
+    window.parent.postMessage({ type: 'ready' }, '*');
+  </script>
+</body>
+</html>
