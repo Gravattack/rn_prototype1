@@ -5,15 +5,40 @@ A web-based React Native playground similar to Expo Snack that allows developers
 ## 🚀 Features
 
 - **Monaco Editor**: Full-featured code editor with TypeScript/JSX syntax highlighting
-- **Live Preview**: Instant preview using react-native-web
+- **iOS Local Mirror**: Real-time streaming of a physical iOS Simulator to your browser
+- **Remote Control**: Interact with the local simulator directly from the web UI (tap/swipe)
+- **Automatic Booting**: Automatically starts the iOS Simulator if it's not running
+- **Instant Sync**: Syncs your web code to a local Expo project automatically
 - **File Explorer**: Multi-file project support with folder structure
-- **Console**: Real-time logs, errors, and warnings
-- **Resizable Panels**: Customizable workspace layout
-- **Dark Mode**: Automatic dark mode support
+- **Console**: Real-time logs and errors streamed from the native device
+
+## 🚀 Getting Started
+
+This project consists of two parts: the **Web UI** and the **Local Runner (Sim Bridge)**.
+
+### 1. The Web UI
+The frontend is built with Next.js and can be deployed to Vercel. 
+- **Production URL**: [Your Vercel URL Here]
+
+### 2. The Local Runner (Sim Bridge)
+To see your code running on a real iOS Simulator, you need to run the bridge on your Mac.
+
+```bash
+# Start the bridge instantly via npx
+npx sim-bridge
+```
+
+Once started, enter the **Token** shown in your terminal into the Web UI "Connect" prompt.
 
 ## 📋 Project Status
 
-### ✅ Phase 0 & 1: Foundation (Complete)
+### ✅ Completed
+- Automatic Simulator Boot & Readiness Check
+- Resilient Screenshot Mirroring (Mirroring the device to browser)
+- Bi-directional sync of playground code to local Expo
+- Standalone CLI Tool (`sim-bridge`) published to NPM
+- Vercel-ready Deployment configuration
+
 - Next.js 14+ with App Router
 - TypeScript with strict mode
 - ESLint & Prettier configuration
