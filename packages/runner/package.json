@@ -1,10 +1,10 @@
 {
-  "name": "rn-bridge",
+  "name": "sim-bridge",
   "version": "0.1.0",
   "description": "Local runner for RN Playground",
   "main": "dist/index.js",
   "bin": {
-    "rn-bridge": "dist/index.js"
+    "sim-bridge": "dist/index.js"
   },
   "scripts": {
     "dev": "ts-node src/index.ts",

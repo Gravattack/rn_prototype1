@@ -1,6 +1,6 @@
-# 🚀 RN Bridge
+# 🚀 Sim Bridge
 
-`rn-bridge` is a companion tool for the React Native Playground. It allows you to run your code on a physical iOS Simulator on your Mac, while you write code in the web-based editor.
+`sim-bridge` is a companion tool for the React Native Playground. It allows you to run your code on a physical iOS Simulator on your Mac, while you write code in the web-based editor.
 
 ## Features
 - **Automatic Simulator Boot**: Detects and boots an iOS Simulator if one isn't already running.
@@ -49,7 +49,7 @@
 
 If installed globally or via npx:
 ```bash
-rn-bridge --port 8080 --storage ~/my-sessions --native ./my-expo-app
+sim-bridge --port 8080 --storage ~/my-sessions --native ./my-expo-app
 ```
 
 | Option | Shortcut | Description | Default |
@@ -63,12 +63,12 @@ rn-bridge --port 8080 --storage ~/my-sessions --native ./my-expo-app
 To make this available to others via `npx`:
 1. Ensure you have an NPM account.
 2. Run `npm login`.
-3. Update the `name` in `package.json` to something unique if `rn-bridge` is taken.
+3. Update the `name` in `package.json` to something unique if `sim-bridge` is taken.
 4. Run `npm publish --access public`.
 
 Now anyone can run it with:
 ```bash
-npx rn-bridge
+npx sim-bridge
 ```
 
 ## How it Works

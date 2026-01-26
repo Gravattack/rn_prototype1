@@ -264,7 +264,7 @@ async function start(config: { port: number, storagePath?: string, nativeAppPath
 }
 
 program
-    .name('rn-playground-runner')
+    .name('sim-bridge')
     .description('Local runner for React Native Playground')
     .version('0.1.0')
     .option('-p, --port <number>', 'port to listen on', '3001')
