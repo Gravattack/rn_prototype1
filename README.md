@@ -6,7 +6,7 @@
 
 A web-based React Native playground similar to Expo Snack that allows developers to write, preview, and share React Native code directly in the browser.
 
-## 🚀 Features
+##  Features
 
 - **Monaco Editor**: Full-featured code editor with TypeScript/JSX syntax highlighting
 - **iOS Local Mirror**: Real-time streaming of a physical iOS Simulator to your browser
@@ -16,7 +16,7 @@ A web-based React Native playground similar to Expo Snack that allows developers
 - **File Explorer**: Multi-file project support with folder structure
 - **Console**: Real-time logs and errors streamed from the native device
 
-## 🚀 Getting Started
+##  Getting Started
 
 This project consists of two parts: the **Web UI** and the **Local Runner (Sim Bridge)**.
 
@@ -34,9 +34,9 @@ npx sim-bridge
 
 Once started, enter the **Token** shown in your terminal into the Web UI "Connect" prompt.
 
-## 📋 Project Status
+##  Project Status
 
-### ✅ Completed
+###  Completed
 - Automatic Simulator Boot & Readiness Check
 - Resilient Screenshot Mirroring (Mirroring the device to browser)
 - Bi-directional sync of playground code to local Expo
@@ -50,7 +50,7 @@ Once started, enter the **Token** shown in your terminal into the Web UI "Connec
 - Monaco editor integration
 - Basic component structure
 
-### 🚧 Upcoming Phases
+### Upcoming Phases
 - **Phase 2**: Enhanced editor features and project templates
 - **Phase 3**: React Native Web runtime integration
 - **Phase 4**: Metro-like bundling system
@@ -59,7 +59,7 @@ Once started, enter the **Token** shown in your terminal into the Web UI "Connec
 - **Phase 7**: Security and sandboxing
 - **Phase 8**: Native preview (Android emulator)
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 - **Framework**: Next.js 16 (App Router)
 - **Language**: TypeScript 5
@@ -68,7 +68,7 @@ Once started, enter the **Token** shown in your terminal into the Web UI "Connec
 - **Styling**: Tailwind CSS
 - **UI Components**: Lucide Icons, react-resizable-panels
 
-## 📦 Installation
+##  Installation
 
 ```bash
 # Clone the repository
@@ -84,7 +84,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## 🧪 Development Commands
+## Development Commands
 
 ```bash
 # Development server
@@ -109,7 +109,7 @@ npm run format
 npm run format:check
 ```
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 playground/
@@ -132,7 +132,7 @@ playground/
 └── public/                # Static assets
 ```
 
-## 🎯 Supported React Native APIs
+##  Supported React Native APIs
 
 See [docs/vision.md](docs/vision.md) for detailed API support classification:
 
@@ -140,7 +140,7 @@ See [docs/vision.md](docs/vision.md) for detailed API support classification:
 - **Yellow List**: Partially supported with stubs
 - **Red List**: Not supported (native modules)
 
-## 🤝 Contributing
+##  Contributing
 
 We welcome contributions from the community! Please read our [Contributing Guide](CONTRIBUTING.md) for details on:
 
@@ -150,15 +150,15 @@ We welcome contributions from the community! Please read our [Contributing Guide
 
 See the [open issues](https://github.com/Gravattack/rn_prototype1/issues) for a list of known issues and planned features.
 
-## 📜 Code of Conduct
+##  Code of Conduct
 
 This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
 
-## 🔒 Security
+##  Security
 
 If you discover a security vulnerability, please see our [Security Policy](SECURITY.md) for responsible disclosure instructions. **Do not open a public issue for security vulnerabilities.**
 
-## 📄 License
+##  License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
