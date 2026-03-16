@@ -1,79 +1,113 @@
-# 🚀 Sim Bridge
+# 🚀 Sim-Bridge
 
-`sim-bridge` is a companion tool for the React Native Playground. It allows you to run your code on a physical iOS Simulator on your Mac, while you write code in the web-based editor.
+`sim-bridge` is a **zero-configuration native orchestrator** for the React Native Playground.
 
 ## Features
-- **Automatic Simulator Boot**: Detects and boots an iOS Simulator if one isn't already running.
-- **Bi-directional Sync**: Syncs code from the browser editor to a local Expo project instantly.
-- **Web-based Console**: Streams native logs directly back to your browser.
-- **Remote Control**: Tap and swipe the simulator mirror in your browser to interact with the device.
+
+- **Zero Setup**: No manual configuration required
+- **Auto-Bootstrap**: Validates environment, installs Expo CLI, creates workspace, boots simulator
+- **Idempotent**: Safe to restart; reuses existing simulator and Metro process
+- **Token Security**: New token generated on each start
+- **Screen Mirroring**: Real-time simulator screenshots
 
 ## Prerequisites
-- macOS (required for iOS Simulator)
-- Xcode (and `xcrun simctl` command line tools)
-- Node.js & npm
-- Expo CLI (`npm install -g expo-cli`)
 
-## Getting Started
+- **macOS** (required for iOS Simulator)
+- **Xcode** with Command Line Tools
 
-1. **Install Dependencies**:
-   ```bash
-   # From source
-   cd packages/runner
-   npm install
-   ```
+> Note: Expo CLI is installed automatically if missing.
 
-2. **Configure (Optional)**:
-   Create a `.env` file in `packages/runner`:
-   ```env
-   RUNNER_PORT=3001
-   RUNNER_STORAGE_PATH=~/.rn-playground
-   NATIVE_APP_PATH=../../apps/native
-   ```
+## Quick Start
 
-3. **Start the Runner**:
-   ```bash
-   # Using dev mode
-   npm run dev
-   
-   # Or using the built CLI directly
-   npm run build
-   node dist/index.js --port 3001
-   ```
+```bash
+cd packages/runner
+npm install
+npm run dev
+```
 
-4. **Connect to Playground**:
-   - Open your deployed Playground UI.
-   - Enter the **Token** shown in your terminal when prompted.
+The runner will:
+1. ✅ Validate your environment (macOS, Xcode)
+2. ✅ Install Expo CLI globally (if needed)
+3. ✅ Create workspace at `~/.rn-playground/native`
+4. ✅ Boot an iOS Simulator (if none running)
+5. ✅ Generate a security token
+6. ✅ Start the server
+
+Copy the token displayed in terminal and paste it into the web playground.
 
 ## CLI Usage
 
-If installed globally or via npx:
 ```bash
-sim-bridge --port 8080 --storage ~/my-sessions --native ./my-expo-app
-```
-
-| Option | Shortcut | Description | Default |
-| :--- | :--- | :--- | :--- |
-| `--port` | `-p` | Port to listen on | `3001` |
-| `--storage` | `-s` | Custom session storage path | `~/.rn-playground` |
-| `--native` | `-n` | Path to your native Expo project | `../../apps/native` |
-
-## Publishing to NPM
-
-To make this available to others via `npx`:
-1. Ensure you have an NPM account.
-2. Run `npm login`.
-3. Update the `name` in `package.json` to something unique if `sim-bridge` is taken.
-4. Run `npm publish --access public`.
-
-Now anyone can run it with:
-```bash
+# Via npx (when published)
 npx sim-bridge
+
+# With custom port
+npx sim-bridge --port 8080
 ```
 
-## How it Works
-The runner acts as a local bridge. When you click **Run** in the browser, the editor sends your code to this runner. The runner then:
-1. Ensures a simulator is booted.
-2. Writes the code to a local boilerplate Expo project (`apps/native`).
-3. Triggers `expo start --ios` to launch the app.
-4. Streams screenshots and logs back to the browser.
+| Option | Description | Default |
+| :--- | :--- | :--- |
+| `--port, -p` | Port to listen on | `3001` |
+
+## API Endpoints
+
+### `GET /health`
+Returns structured system state. **No authentication required.**
+
+```json
+{
+  "ok": true,
+  "platform": "ios",
+  "simulator": "booted",
+  "expo": "ready",
+  "workspace": "ready",
+  "runnerVersion": "0.2.0"
+}
+```
+
+### `POST /sync`
+Syncs files from the playground editor to the native workspace.
+
+### `POST /run`
+Launches the app on the simulator. **Idempotent** - reuses existing Metro if running.
+
+### `GET /screenshot`
+Returns a PNG screenshot of the simulator.
+
+### `WS /logs?sessionId=<id>`
+WebSocket stream for real-time logs.
+
+## Architecture
+
+```
+┌─────────────────┐         ┌──────────────────────┐
+│  Web Playground │ ◄─────► │     sim-bridge       │
+│  (Browser)      │  REST   │  (Local Orchestrator)│
+└─────────────────┘  + WS   └──────────────────────┘
+                                     │
+                                     ▼
+                            ┌──────────────────────┐
+                            │   iOS Simulator      │
+                            │   (via xcrun simctl) │
+                            └──────────────────────┘
+```
+
+## Workspace Layout
+
+```
+~/.rn-playground/
+├── native/          # Expo project (auto-created)
+├── sessions/        # Temporary session files
+└── token            # Current auth token
+```
+
+## Error Handling
+
+All errors include actionable remediation steps:
+
+| Error Code | Cause | Action |
+| :--- | :--- | :--- |
+| `MACOS_REQUIRED` | Running on non-Mac | Use a Mac |
+| `XCODE_CLI_MISSING` | Xcode not installed | Run `xcode-select --install` |
+| `SIM_NOT_FOUND` | No simulator available | Download iOS runtime in Xcode |
+| `SIMULATOR_TIMEOUT` | Boot took too long | Open Simulator.app manually |

@@ -36,8 +36,8 @@ export default function CodeEditor({
             <div
               key={file}
               className={`flex h-full min-w-[120px] max-w-[200px] cursor-pointer items-center justify-between border-r border-gray-200 px-3 text-sm transition-colors dark:border-gray-800 ${isActive
-                  ? 'bg-white text-blue-600 dark:bg-gray-800 dark:text-blue-400 font-medium'
-                  : 'bg-gray-50 text-gray-500 hover:bg-gray-100 dark:bg-gray-900/50 dark:text-gray-400 dark:hover:bg-gray-800'
+                ? 'bg-white text-blue-600 dark:bg-gray-800 dark:text-blue-400 font-medium'
+                : 'bg-gray-50 text-gray-500 hover:bg-gray-100 dark:bg-gray-900/50 dark:text-gray-400 dark:hover:bg-gray-800'
                 }`}
               onClick={() => onSelectFile(file)}
             >
@@ -70,16 +70,68 @@ export default function CodeEditor({
           onChange={(newValue) => onChange(newValue || '')}
           theme="vs-dark"
           beforeMount={(monaco) => {
-            // Disable TS validation for JS/JSX files
+            // Disable semantic validation (keep syntax checking only)
+            monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+              noSemanticValidation: true,
+              noSyntaxValidation: false,
+            });
             monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
               noSemanticValidation: true,
               noSyntaxValidation: false,
             });
-            monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
+
+            // React Native compiler options
+            const compilerOptions = {
               jsx: monaco.languages.typescript.JsxEmit.React,
-              allowNonTsExtensions: true,
+              allowJs: true,
+              esModuleInterop: true,
+              moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
               target: monaco.languages.typescript.ScriptTarget.ESNext,
-            });
+              module: monaco.languages.typescript.ModuleKind.ESNext,
+              skipLibCheck: true,
+              allowNonTsExtensions: true,
+            };
+            monaco.languages.typescript.typescriptDefaults.setCompilerOptions(compilerOptions);
+            monaco.languages.typescript.javascriptDefaults.setCompilerOptions(compilerOptions);
+
+            // Inject lightweight React Native type stubs
+            const typeStubs = `
+              declare module 'react-native' {
+                export const View: any;
+                export const Text: any;
+                export const TouchableOpacity: any;
+                export const ScrollView: any;
+                export const Image: any;
+                export const TextInput: any;
+                export const StyleSheet: { create: <T>(styles: T) => T };
+                export const Dimensions: any;
+                export const Platform: any;
+                export const Alert: any;
+                export const FlatList: any;
+                export const SafeAreaView: any;
+                export const StatusBar: any;
+                export const Pressable: any;
+                export const Modal: any;
+                export const ActivityIndicator: any;
+                export const KeyboardAvoidingView: any;
+              }
+              declare module 'expo' {
+                const expo: any;
+                export default expo;
+              }
+              declare module 'expo-*' {
+                const m: any;
+                export default m;
+                export = m;
+              }
+              declare module '@expo/*' {
+                const m: any;
+                export default m;
+                export = m;
+              }
+            `;
+            monaco.languages.typescript.typescriptDefaults.addExtraLib(typeStubs, 'react-native.d.ts');
+            monaco.languages.typescript.javascriptDefaults.addExtraLib(typeStubs, 'react-native.d.ts');
           }}
           options={{
             minimap: { enabled: false },

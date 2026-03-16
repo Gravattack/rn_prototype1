@@ -1,15 +1,40 @@
 {
   "name": "sim-bridge",
-  "version": "0.1.0",
-  "description": "Local runner for RN Playground",
+  "version": "0.2.8",
+  "description": "Zero-config native orchestrator for React Native Playground",
   "main": "dist/index.js",
   "bin": {
     "sim-bridge": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "react-native",
+    "expo",
+    "simulator",
+    "ios",
+    "playground",
+    "dev-tools"
+  ],
+  "author": "Aditya Singh",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Gravattack/rn_prototype1.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "os": [
+    "darwin"
+  ],
   "scripts": {
     "dev": "ts-node src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "chalk": "^4.1.2",
@@ -22,7 +47,6 @@
     "ws": "^8.13.0"
   },
   "devDependencies": {
-    "@types/commander": "^2.12.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.25",
     "@types/fs-extra": "^11.0.4",

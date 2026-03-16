@@ -2,27 +2,45 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import os from 'os';
 import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import chalk from 'chalk';
-import { exec } from 'child_process';
+import { exec, ChildProcess } from 'child_process';
 import { promisify } from 'util';
-import { WorkspaceManager } from './workspace';
+import fs from 'fs-extra';
 import { SimulatorController } from './simulator';
 import { RunnerError } from './errors';
-import dotenv from 'dotenv';
+import { bootstrap, BootstrapResult } from './bootstrap';
+import { getWorkspacePath, syncToWorkspace } from './expo-workspace';
 import { program } from 'commander';
 
-dotenv.config();
-
 const execAsync = promisify(exec);
+const RUNNER_VERSION = '0.2.0';
+const BASE_PATH = path.join(os.homedir(), '.rn-playground');
+const SESSIONS_PATH = path.join(BASE_PATH, 'sessions');
 
-async function start(config: { port: number, storagePath?: string, nativeAppPath?: string }) {
-    const workspace = new WorkspaceManager(config.storagePath);
+// Unique instance ID - generated fresh on every runner start
+// Used by clients to detect runner restarts and invalidate stale tokens
+const RUNNER_ID = crypto.randomUUID();
+
+// Module-level state for idempotent Metro management
+let metroProcess: ChildProcess | null = null;
+
+/**
+ * Checks if Metro process is still alive and usable.
+ */
+function isMetroAlive(): boolean {
+    if (!metroProcess) return false;
+    // Check if process is still running
+    return metroProcess.exitCode === null && !metroProcess.killed;
+}
+
+/**
+ * Starts the Express server after bootstrap completes.
+ */
+async function startServer(bootstrapResult: BootstrapResult, port: number) {
     const sim = new SimulatorController();
-
-    await workspace.init();
-    const token = await workspace.getOrCreateToken();
 
     const app = express();
     app.use(cors({
@@ -53,10 +71,11 @@ async function start(config: { port: number, storagePath?: string, nativeAppPath
             return res.status(403).json({ error: 'Access restricted to localhost' });
         }
 
+        // /health does not require authentication per spec
         if (req.path === '/health') return next();
 
         const receivedToken = req.headers['x-runner-token'];
-        if (receivedToken !== token) {
+        if (receivedToken !== bootstrapResult.token) {
             return res.status(401).json({ error: 'Invalid or missing runner token' });
         }
         next();
@@ -64,77 +83,92 @@ async function start(config: { port: number, storagePath?: string, nativeAppPath
 
     // --- API Endpoints ---
 
+    /**
+     * GET /health - Structured health endpoint per spec
+     * No authentication required.
+     */
     app.get('/health', async (_req: express.Request, res: express.Response) => {
         try {
             const booted = await sim.getBootedDevice();
+            const workspaceValid = await fs.pathExists(path.join(getWorkspacePath(), 'package.json'));
+
+            const ok = !!booted && workspaceValid;
+
             res.json({
-                status: 'ready',
-                platforms: ['ios'],
-                simulators: booted ? [booted.name] : [],
-                version: '0.1.0',
-                capabilities: {
-                    mirror: ['screenshot'],
-                    logs: ['websocket']
-                }
+                ok,
+                runnerId: RUNNER_ID,
+                platform: 'ios',
+                simulator: booted ? 'booted' : 'not_booted',
+                expo: 'ready', // We validated in bootstrap
+                workspace: workspaceValid ? 'ready' : 'not_ready',
+                runnerVersion: RUNNER_VERSION
             });
         } catch (error) {
-            errorHandler(res, error);
+            res.json({
+                ok: false,
+                platform: 'ios',
+                simulator: 'error',
+                expo: 'unknown',
+                workspace: 'unknown',
+                runnerVersion: RUNNER_VERSION,
+                error: String(error)
+            });
         }
     });
 
+    /**
+     * POST /sync - Sync files from playground to session and workspace
+     */
     app.post('/sync', async (req: express.Request, res: express.Response) => {
         const { sessionId, files } = req.body;
-        if (!sessionId || !files) return res.status(400).json({ error: 'Missing sessionId or files' });
+        if (!sessionId || !files) {
+            return res.status(400).json({ error: 'Missing sessionId or files' });
+        }
 
         try {
-            const sessionPath = await workspace.setupSession(sessionId);
-            await workspace.syncFiles(sessionPath, files);
+            // Sanitize sessionId
+            const safeId = sessionId.replace(/[^a-zA-Z0-9-]/g, '');
+            const sessionPath = path.join(SESSIONS_PATH, safeId);
+            await fs.ensureDir(sessionPath);
+
+            // Write files to session directory
+            for (const [filename, content] of Object.entries(files)) {
+                const filePath = path.join(sessionPath, filename);
+                await fs.ensureDir(path.dirname(filePath));
+                await fs.writeFile(filePath, content as string, 'utf-8');
+            }
+
+            // Sync to native workspace
+            await syncToWorkspace(sessionPath);
+
             res.json({ success: true, path: sessionPath });
         } catch (error) {
+            console.error('[Sync Error]', error);
             res.status(500).json({ error: String(error) });
         }
     });
 
-    let lastBooted: { udid: string, name: string } | null = null;
-    let lastBootCheck = 0;
-
+    /**
+     * GET /screenshot - Simulator screen mirroring
+     */
     app.get('/screenshot', async (_req: express.Request, res: express.Response) => {
         try {
-            // Only refresh device list every 5 seconds to reduce simctl load
-            const now = Date.now();
-            if (!lastBooted || (now - lastBootCheck) > 5000) {
-                const booted = await sim.getBootedDevice();
-                if (booted) {
-                    lastBooted = { udid: booted.udid, name: booted.name };
-                } else {
-                    lastBooted = null;
-                }
-                lastBootCheck = now;
-            }
-
-            if (!lastBooted) {
+            const booted = sim.getActiveSimulator() || await sim.getBootedDevice();
+            if (!booted) {
                 return res.status(404).json({ error: 'No booted simulator found' });
             }
 
-            const { stdout } = await execAsync(`xcrun simctl io ${lastBooted.udid} screenshot -`, {
+            const { stdout } = await execAsync(`xcrun simctl io ${booted.udid} screenshot -`, {
                 encoding: 'buffer',
-                maxBuffer: 10 * 1024 * 1024, // 10MB
-                timeout: 5000 // 5s timeout
+                maxBuffer: 10 * 1024 * 1024,
+                timeout: 5000
             });
 
             res.setHeader('Content-Type', 'image/png');
-            res.setHeader('X-Derived-From', lastBooted.name);
+            res.setHeader('X-Derived-From', booted.name);
             res.send(stdout);
         } catch (error: any) {
-            // For transient simctl errors (e.g. while booting or high load), return 503
-            // This prevents the browser from showing scary 500 errors in console if it's just a retryable failure
             console.warn('[Screenshot Warning]', error.message || error);
-
-            // If the failure is persistent, invalidate cache
-            if (error.message?.includes('Unable to find device') || error.message?.includes('No such file')) {
-                lastBooted = null;
-            }
-
             res.status(503).json({
                 error: 'Simulator mirror temporarily unavailable',
                 details: error.message
@@ -142,21 +176,36 @@ async function start(config: { port: number, storagePath?: string, nativeAppPath
         }
     });
 
+    /**
+     * POST /stop - Cleanup a session
+     */
     app.post('/stop', async (req: express.Request, res: express.Response) => {
         const { sessionId } = req.body;
-        if (!sessionId) return res.status(400).json({ error: 'Missing sessionId' });
+        if (!sessionId) {
+            return res.status(400).json({ error: 'Missing sessionId' });
+        }
 
         try {
-            await workspace.cleanupSession(sessionId);
+            const safeId = sessionId.replace(/[^a-zA-Z0-9-]/g, '');
+            const sessionPath = path.join(SESSIONS_PATH, safeId);
+            if (await fs.pathExists(sessionPath)) {
+                await fs.remove(sessionPath);
+            }
             res.json({ success: true });
         } catch (error) {
             errorHandler(res, error);
         }
     });
 
+    /**
+     * POST /run - Idempotent run endpoint
+     * Reuses existing Metro process if alive, only restarts if dead.
+     */
     app.post('/run', async (req: express.Request, res: express.Response) => {
         const { sessionId } = req.body;
-        if (!sessionId) return res.status(400).json({ error: 'Missing sessionId' });
+        if (!sessionId) {
+            return res.status(400).json({ error: 'Missing sessionId' });
+        }
 
         const log = (message: string, type: 'info' | 'error' | 'warn' = 'info') => {
             (app as any).broadcastLog(sessionId, {
@@ -167,59 +216,153 @@ async function start(config: { port: number, storagePath?: string, nativeAppPath
         };
 
         try {
-            // 1. Check Expo
-            try {
-                await execAsync('npx expo --version');
-            } catch (e) {
-                throw new RunnerError('EXPO_NOT_FOUND', 'Expo CLI not found locally.', 'Run: npm install -g expo');
-            }
+            const workspacePath = getWorkspacePath();
 
-            // 2. Ensure Simulator is ready
-            log('Ensuring simulator is ready...');
-            const device = await sim.ensureSimulatorReady();
-            log(`Simulator ${device.name} is ready.`);
-
-            // 3. Sync files to native app directory
+            // 1. Sync files to native workspace (already done by /sync, but ensure)
             log('Syncing files to native project...');
-            const nativeAppDir = config.nativeAppPath || process.env.NATIVE_APP_PATH || path.join(process.cwd(), '..', '..', 'apps', 'native');
-
-            if (!(await workspace.syncSessionToDirectory(sessionId, nativeAppDir).then(() => true).catch(() => false))) {
-                // If it fails, maybe the path is wrong or session missing
-                throw new RunnerError('INTERNAL_ERROR', `Failed to sync to: ${nativeAppDir}`);
+            const safeId = sessionId.replace(/[^a-zA-Z0-9-]/g, '');
+            const sessionPath = path.join(SESSIONS_PATH, safeId);
+            if (await fs.pathExists(sessionPath)) {
+                await syncToWorkspace(sessionPath);
             }
             log('Files synced.');
 
-            // 4. Start Expo and Launch on iOS
-            log('Launching app via Expo...');
-            // We run 'npx expo start --ios' in the background. 
-            // If it's already running, Expo usually handles it or we'll get a warning.
-            // Using a detached process so it doesn't block the response.
-            const expoProcess = exec('npx expo start --ios', { cwd: nativeAppDir });
+            // 2. Check if Metro is already running (idempotent)
+            if (isMetroAlive()) {
+                log('Metro is already running. Reloading app...');
+                // Metro handles hot reload automatically, just return success
+                res.json({
+                    success: true,
+                    device: bootstrapResult.simulator.name,
+                    message: `App reloading on ${bootstrapResult.simulator.name}`,
+                    metroReused: true
+                });
+                return;
+            }
 
-            expoProcess.stdout?.on('data', (data) => {
-                const output = data.toString();
-                if (output.includes('Opening on iOS')) {
-                    log('App launch triggered.');
+            // 3. Start Native Build (Direct xcodebuild)
+            // We bypass `expo run:ios` to ensure deterministic simulator targeting.
+            const simulatorUdid = bootstrapResult.simulator.udid;
+            const iosDir = path.join(workspacePath, 'ios');
+
+            // Dynamically find workspace and scheme
+            // The project name depends on how create-expo-app initialized it
+            const files = await fs.readdir(iosDir);
+            const workspaceName = files.find(f => f.endsWith('.xcworkspace'));
+
+            if (!workspaceName) {
+                throw new RunnerError(
+                    'WORKSPACE_CORRUPT',
+                    'Could not find .xcworkspace in ios/ directory.',
+                    'Run expo prebuild manually or restart the runner.'
+                );
+            }
+
+            const projectName = workspaceName.replace('.xcworkspace', '');
+            const workspaceFile = path.join(iosDir, workspaceName);
+            const scheme = projectName; // Usually matches workspace name for simple Expo projects
+            const configuration = 'Debug';
+            const appPath = path.join(iosDir, `build/Build/Products/Debug-iphonesimulator/${projectName}.app`);
+
+            log(`Building native app (${projectName}) for ${bootstrapResult.simulator.name} [${simulatorUdid}]...`);
+
+            // Step 3a: xcodebuild
+            try {
+                await new Promise<void>((resolve, reject) => {
+                    // We force:
+                    // 1. IPHONEOS_DEPLOYMENT_TARGET=15.0 (Fix SDK mismatch)
+                    // 2. SUPPORTED_PLATFORMS="iphoneos iphonesimulator" (Fix "Ineligible destination" for simulator)
+                    // 3. ONLY_ACTIVE_ARCH=NO (Ensure we build for simulator arch)
+                    const buildCmd = `xcodebuild -workspace "${workspaceFile}" -scheme "${scheme}" -configuration "${configuration}" -destination "platform=iOS Simulator,id=${simulatorUdid}" -derivedDataPath "${path.join(iosDir, 'build')}" IPHONEOS_DEPLOYMENT_TARGET=15.0 SUPPORTED_PLATFORMS="iphoneos iphonesimulator" ONLY_ACTIVE_ARCH=NO`;
+
+                    const buildProcess = exec(buildCmd, { cwd: iosDir });
+
+                    buildProcess.stdout?.on('data', (data) => {
+                        const output = data.toString();
+                        // Stream interesting parts of build output
+                        if (output.includes('Compile') || output.includes('Linking') || output.includes('BUILD SUCCEEDED')) {
+                            console.log(chalk.gray(`[xcodebuild] ${output.trim().split('\n')[0]}`));
+                        }
+                    });
+
+                    buildProcess.stderr?.on('data', (data) => {
+                        console.error(chalk.yellow(`[xcodebuild] ${data.toString().trim()}`));
+                    });
+
+                    buildProcess.on('exit', (code) => {
+                        if (code === 0) resolve();
+                        else reject(new Error(`xcodebuild failed with code ${code}`));
+                    });
+                });
+                log('Native build successful.');
+            } catch (buildError: any) {
+                console.error(chalk.red('[Build Error]'), buildError);
+                throw new RunnerError(
+                    'INTERNAL_ERROR', // Could be specific BUILD_FAILED
+                    `Native build failed: ${buildError.message}`,
+                    'Check xcodebuild logs for details.'
+                );
+            }
+
+            // Step 3b: Install app via simctl
+            log('Installing app on simulator...');
+            await sim.install(simulatorUdid, appPath);
+
+            // Step 3c: Launch app via simctl
+            log('Launching app...');
+
+            // Read bundle ID from app.json
+            const appJsonPath = path.join(workspacePath, 'app.json');
+            const appJson = await fs.readJson(appJsonPath);
+            const bundleId = appJson?.expo?.ios?.bundleIdentifier || 'com.anonymous.native';
+
+            await sim.launch(simulatorUdid, bundleId);
+
+            // Step 3d: Start Metro independently
+            log('Starting Metro bundler...');
+            metroProcess = exec('npx expo start', {
+                cwd: workspacePath,
+                env: {
+                    ...process.env,
+                    CI: '1',
+                    EXPO_NO_TELEMETRY: '1',
+                    EXPO_NO_UPDATE_CHECK: '1'
                 }
             });
 
-            expoProcess.stderr?.on('data', (data) => {
-                console.error(`[Expo Error] ${data}`);
+            metroProcess.stdout?.on('data', (data) => {
+                const output = data.toString();
+                console.log(chalk.gray(`[Metro] ${output.trim()}`));
+            });
+
+            metroProcess.stderr?.on('data', (data) => {
+                const output = data.toString();
+                if (!output.includes('WARN') && !output.includes('deprecated')) {
+                    console.error(chalk.yellow(`[Metro] ${output.trim()}`));
+                }
+            });
+
+            metroProcess.on('exit', (code) => {
+                console.log(chalk.gray(`[Metro] Process exited with code ${code}`));
+                metroProcess = null;
             });
 
             res.json({
                 success: true,
-                device: device.name,
-                message: `Session ${sessionId} is launching on ${device.name}`
+                device: bootstrapResult.simulator.name,
+                udid: simulatorUdid,
+                message: `Session ${sessionId} running on ${bootstrapResult.simulator.name}`,
+                metroReused: false
             });
 
-            log(`Successfully started session ${sessionId} on ${device.name}`);
+            log(`Running on ${bootstrapResult.simulator.name} [${simulatorUdid}]...`);
         } catch (error) {
             errorHandler(res, error);
-            log(`Failed to start session: ${error instanceof Error ? error.message : String(error)}`, 'error');
+            log(`Failed: ${error instanceof Error ? error.message : String(error)}`, 'error');
         }
     });
 
+    // --- WebSocket for Logs ---
     const server = createServer(app);
     const wss = new WebSocketServer({ noServer: true });
 
@@ -241,7 +384,6 @@ async function start(config: { port: number, storagePath?: string, nativeAppPath
             type: 'info',
             message: `Connected to Runner Log Stream (${sessionId || 'global'})`
         }));
-
         ws.sessionId = sessionId;
     });
 
@@ -255,30 +397,46 @@ async function start(config: { port: number, storagePath?: string, nativeAppPath
         });
     };
 
-    server.listen(config.port, '127.0.0.1', () => {
-        console.log(chalk.green('\n🚀 RN Playground Local Runner Active'));
-        console.log(chalk.cyan(`📍 URL: http://127.0.0.1:${config.port}`));
-        console.log(chalk.yellow(`🔑 Token: ${token}`));
-        console.log(chalk.gray('-------------------------------------------\n'));
+    // Start listening
+    server.listen(port, '127.0.0.1', () => {
+        console.log(chalk.green('\n🚀 sim-bridge is running!'));
+        console.log(chalk.cyan(`📍 URL: http://127.0.0.1:${port}`));
+        console.log(chalk.yellow(`🔑 Token: ${bootstrapResult.token}`));
+        console.log(chalk.gray(`📱 Simulator: ${bootstrapResult.simulator.name}`));
+        console.log(chalk.gray(`📁 Workspace: ${bootstrapResult.workspace}`));
+        console.log(chalk.gray('-------------------------------------------'));
+        console.log(chalk.white('Paste the token above into the web playground to connect.\n'));
     });
 }
 
+// --- CLI Entry Point ---
 program
     .name('sim-bridge')
-    .description('Local runner for React Native Playground')
-    .version('0.1.0')
+    .description('Zero-config native orchestrator for React Native Playground')
+    .version(RUNNER_VERSION)
     .option('-p, --port <number>', 'port to listen on', '3001')
-    .option('-s, --storage <path>', 'path for session storage')
-    .option('-n, --native <path>', 'path to native expo project boilerplate')
     .parse(process.argv);
 
 const options = program.opts();
+const port = parseInt(options.port, 10);
 
-start({
-    port: parseInt(options.port, 10),
-    storagePath: options.storage,
-    nativeAppPath: options.native
-}).catch(err => {
-    console.error(chalk.red('Failed to start runner:'), err);
-    process.exit(1);
-});
+// Main entry: Bootstrap first, then start server
+(async () => {
+    try {
+        // Bootstrap MUST complete before server starts
+        const result = await bootstrap();
+
+        // Ensure sessions directory exists
+        await fs.ensureDir(SESSIONS_PATH);
+
+        // Start the server
+        await startServer(result, port);
+    } catch (err) {
+        if (err instanceof RunnerError) {
+            // Error already logged by bootstrap
+            process.exit(1);
+        }
+        console.error(chalk.red('Fatal error:'), err);
+        process.exit(1);
+    }
+})();

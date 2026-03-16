@@ -1,4 +1,9 @@
 export type RunnerErrorCode =
+    | 'MACOS_REQUIRED'
+    | 'XCODE_CLI_MISSING'
+    | 'EXPO_INSTALL_FAILED'
+    | 'WORKSPACE_CORRUPT'
+    | 'SIMULATOR_TIMEOUT'
     | 'XCODE_NOT_INSTALLED'
     | 'SIM_NOT_FOUND'
     | 'SIM_BOOT_FAILED'
@@ -7,6 +12,8 @@ export type RunnerErrorCode =
     | 'METRO_CONFLICT'
     | 'AUTH_FAILED'
     | 'SESSION_NOT_FOUND'
+    | 'IOS_PLATFORM_MISSING'
+    | 'IOS_PLATFORM_CHECK_FAILED'
     | 'INTERNAL_ERROR';
 
 export class RunnerError extends Error {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Folder, File, ChevronRight, ChevronDown, Plus, Trash2 } from 'lucide-react';
+import { Folder, File, ChevronRight, ChevronDown, Plus, FolderPlus, Trash2 } from 'lucide-react';
 
 interface FileTreeProps {
     files: Record<string, string>;
@@ -143,12 +143,18 @@ export default function FileTree({
 }: FileTreeProps) {
     const fileNodes = buildFileTree(files);
     const [isCreating, setIsCreating] = useState(false);
+    const [createType, setCreateType] = useState<'file' | 'folder'>('file');
     const [newName, setNewName] = useState('');
 
     const handleCreate = (e: React.FormEvent) => {
         e.preventDefault();
         if (newName.trim()) {
-            onCreateFile(newName.trim());
+            if (createType === 'folder') {
+                // Create a placeholder file inside the folder
+                onCreateFile(`${newName.trim()}/.gitkeep`, '');
+            } else {
+                onCreateFile(newName.trim());
+            }
             setNewName('');
             setIsCreating(false);
         }
@@ -162,11 +168,18 @@ export default function FileTree({
                 </h2>
                 <div className="flex items-center gap-1">
                     <button
-                        onClick={() => setIsCreating(true)}
+                        onClick={() => { setIsCreating(true); setCreateType('file'); }}
                         className="rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
                         title="New File"
                     >
                         <Plus className="h-4 w-4" />
+                    </button>
+                    <button
+                        onClick={() => { setIsCreating(true); setCreateType('folder'); }}
+                        className="rounded p-1 text-gray-500 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                        title="New Folder"
+                    >
+                        <FolderPlus className="h-4 w-4" />
                     </button>
                 </div>
             </div>
@@ -181,7 +194,7 @@ export default function FileTree({
                                 onChange={(e) => setNewName(e.target.value)}
                                 onBlur={() => !newName && setIsCreating(false)}
                                 className="w-full rounded border border-blue-500 bg-white px-2 py-0.5 text-sm dark:bg-gray-900"
-                                placeholder="filename.jsx"
+                                placeholder={createType === 'folder' ? 'folder-name' : 'filename.jsx'}
                             />
                         </form>
                     </div>
