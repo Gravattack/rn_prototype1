@@ -52,6 +52,7 @@ export function generateIframeContent(transformedCode: string, imports: string[]
 <body>
   <div id="root"></div>
   <div id="error"></div>
+  <script type="text/plain" id="user-code">${transformedCode.replace(/</g, '\\x3c')}</script>
 
   <script type="module">
     // Expose globals for debug/fallback (optional)
@@ -126,8 +127,9 @@ export function generateIframeContent(transformedCode: string, imports: string[]
     // Execute user code
     async function run() {
       try {
-        // Create Blob from user code
-        const blob = new Blob([\`${transformedCode.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\${/g, '\\${')}\`], { type: 'text/javascript' });
+        // Read code safely from DOM instead of string interpolation
+        const code = document.getElementById('user-code').textContent || '';
+        const blob = new Blob([code], { type: 'text/javascript' });
         const url = URL.createObjectURL(blob);
         
         // Import the blob
